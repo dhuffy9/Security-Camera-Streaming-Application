@@ -1,4 +1,6 @@
 from fastapi import FastAPI, WebSocket
+from fastapi.responses import HTMLResponse
+from typing import List
 import uvicorn
 
 server = FastAPI()
@@ -27,6 +29,7 @@ print(manager)
 
 @server.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    print("New websocket connection") 
     await manager.connect(websocket)
     try:
         while True:
@@ -42,6 +45,11 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @server.get("/")
 def main_root():
-    return "dilan"
+    with open("./public/index.html") as file:
+        html_content = file.read()
+    return HTMLResponse(content=html_content)
+
+
+
 
 uvicorn.run(server, host="localhost", port=8000)

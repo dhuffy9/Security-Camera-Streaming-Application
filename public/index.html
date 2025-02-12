@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Video Stream</title>
+</head>
+<body>
+    <h1>Camera Stream</h1>
+    <video id="video" autoplay playsinline></video>
+    <script>
+        const video = document.getElementById('video');
+        const websocket = new WebSocket('ws://localhost:8000/ws');
+
+        websocket.onmessage = function(event) {
+            const blob = new Blob([event.data], { type: 'video/webm' });
+            const url = URL.createObjectURL(blob);
+            video.src = url;
+        };
+
+        // Request camera access
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(stream => {
+                const mediaRecorder = new MediaRecorder(stream);
+                mediaRecorder.start(100); // Send data every 100ms
+
+                mediaRecorder.ondataavailable = function(event) {
+                    if (event.data.size > 0) {
+                        websocket.send(event.data);
+                    }
+                };
+            })
+            .catch(error => {
+                console.error('Error accessing media devices.', error);
+            });
+    </script>
+</body>
+</html>
