@@ -1,58 +1,104 @@
 <!DOCTYPE html>
 <html>
-    <head>
-        <title>WebSocket Webcam Stream</title>
-    </head>
-    <body>
-        <h1>WebSocket Webcam Stream</h1>
-        <!-- Video element to display the webcam stream -->
-        <video id="video" width="640" height="480" autoplay muted></video>
-        <script>
-            // Request access to the user's webcam
-            navigator.mediaDevices.getUserMedia({ video: true, audio: false })
-                .then(function(stream) {
-                    // Display the webcam stream in the video element
-                    const video = document.getElementById('video');
-                    video.srcObject = stream;
+  <head>
+    <meta charset="utf-8" />
+    <title>WebSocket Video Echo</title>
+    <style>
+      video { width: 320px; height: 240px; margin: 10px; border: 1px solid black; }
+    </style>
+  </head>
+  <body>
+    <h1>WebSocket Video Echo</h1>
+    <p>Local Webcam (captured):</p>
+    <video id="localVideo" autoplay muted></video>
+    <p>Stream from Server (echoed):</p>
+    <video id="serverVideo" autoplay controls></video>
+    
+    <script>
+      // Get references to the video elements
+      const localVideo = document.getElementById('localVideo');
+      const serverVideo = document.getElementById('serverVideo');
 
-                    // Open a WebSocket connection to the server
-                    const socket = new WebSocket("ws://localhost:8000/ws");
-                    socket.binaryType = "arraybuffer"; // ensure binary data is handled properly
+      // Set up a MediaSource for the server video stream
+      const mediaSource = new MediaSource();
+      serverVideo.src = URL.createObjectURL(mediaSource);
+      let sourceBuffer;
+      let bufferQueue = [];
 
-                    // Setup MediaRecorder to capture video chunks
-                    const options = { mimeType: "video/webm; codecs=vp9" };
-                    const mediaRecorder = new MediaRecorder(stream, options);
+      mediaSource.addEventListener('sourceopen', () => {
+        // Create a SourceBuffer. Make sure the mime type matches what MediaRecorder outputs.
+        const mimeType = 'video/webm; codecs="vp8, opus"';
+        if (MediaSource.isTypeSupported(mimeType)) {
+          sourceBuffer = mediaSource.addSourceBuffer(mimeType);
+          sourceBuffer.mode = 'sequence';
 
-                    // When a video chunk is available, send it over the WebSocket
-                    mediaRecorder.ondataavailable = function(event) {
-                        if (event.data && event.data.size > 0) {
-                            event.data.arrayBuffer().then(buffer => {
-                                if (socket.readyState === WebSocket.OPEN) {
-                                    socket.send(buffer);
-                                    console.log("Sent video chunk of", buffer.byteLength, "bytes");
-                                }
-                            });
-                        }
-                    };
+          // When the sourceBuffer is done updating, process any queued chunks
+          sourceBuffer.addEventListener('updateend', () => {
+            if (bufferQueue.length > 0 && !sourceBuffer.updating) {
+              sourceBuffer.appendBuffer(bufferQueue.shift());
+            }
+          });
+        } else {
+          console.error('MIME type not supported:', mimeType);
+        }
+      });
 
-                    // Start recording, emitting a new chunk every second (1000ms)
-                    mediaRecorder.start(1000);
+      // Access the user's webcam
+      navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+        .then((stream) => {
+          // Show the local stream in the first video element
+          localVideo.srcObject = stream;
 
-                    socket.onopen = function() {
-                        console.log("WebSocket connection opened");
-                    };
+          // Configure MediaRecorder with the same mime type
+          const options = { mimeType: 'video/webm; codecs="vp8, opus"' };
+          const mediaRecorder = new MediaRecorder(stream, options);
+          
+          // Open a WebSocket connection to the server
+          const socket = new WebSocket('ws://localhost:8000/ws');
+          socket.binaryType = 'arraybuffer';
+          
+          socket.onopen = () => {
+            console.log('WebSocket connection opened');
+          };
 
-                    socket.onerror = function(error) {
-                        console.error("WebSocket error:", error);
-                    };
+          // When a data chunk is available from the MediaRecorder, send it to the server
+          mediaRecorder.ondataavailable = (event) => {
+            if (event.data && event.data.size > 0 && socket.readyState === WebSocket.OPEN) {
+              event.data.arrayBuffer().then((buffer) => {
+                socket.send(buffer);
+                console.log('Sent video chunk, size:', buffer.byteLength);
+              });
+            }
+          };
 
-                    socket.onclose = function() {
-                        console.log("WebSocket connection closed");
-                    };
-                })
-                .catch(function(err) {
-                    console.error("Error accessing webcam: " + err);
-                });
-        </script>
-    </body>
+          // Start recording, with a new chunk every 1 second
+          mediaRecorder.start(1000);
+
+          // When receiving data (echoed back by the server), add it to the SourceBuffer
+          socket.onmessage = (event) => {
+            if (sourceBuffer) {
+              const chunk = new Uint8Array(event.data);
+              if (!sourceBuffer.updating) {
+                sourceBuffer.appendBuffer(chunk);
+              } else {
+                // If busy, queue the chunk for later appending
+                bufferQueue.push(chunk);
+              }
+            }
+          };
+
+          socket.onerror = (error) => {
+            console.error('WebSocket error:', error);
+          };
+
+          socket.onclose = () => {
+            console.log('WebSocket connection closed');
+          };
+
+        })
+        .catch((err) => {
+          console.error('Error accessing media devices:', err);
+        });
+    </script>
+  </body>
 </html>

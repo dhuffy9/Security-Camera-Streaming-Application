@@ -37,6 +37,7 @@ async def websocket_endpoint(websocket: WebSocket):
             print("Received video chunk of size:", len(data))
             # Process incoming frame data
             # Broadcast to other clients if needed
+            await websocket.send_bytes(data)
         #await manager.broadcast(data)
     except Exception as e:
         print(f"Error: {e}")
