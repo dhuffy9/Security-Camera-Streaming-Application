@@ -1,9 +1,12 @@
 from fastapi import FastAPI, WebSocket
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from typing import List
 import uvicorn
 
 server = FastAPI()
+
+server.mount("/public", StaticFiles(directory="public"), name="public")
 
 
 class ConnectionManager:
